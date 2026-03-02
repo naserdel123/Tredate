@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إضافة منتج | لوحة النشر</title>
+    
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <canvas id="particles-canvas"></canvas>
+    <div class="cursor"></div>
+    <div class="cursor-follower"></div>
+
+    <div id="toast" class="toast">
+        <span class="toast-icon"></span>
+        <span class="toast-message"></span>
+    </div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">✍️ واجهة النشر</div>
+        <a href="home.html" class="back-btn">← العودة للمتجر</a>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <h1 class="page-title">
+            <span class="glitch" data-text="نشر منتج جديد">نشر منتج جديد</span>
+        </h1>
+
+        <div class="form-card">
+            <form id="productForm">
+                <!-- Image Upload -->
+                <div class="form-group">
+                    <label>صورة المنتج</label>
+                    <div class="upload-area" id="uploadArea">
+                        <input type="file" class="upload-input" id="imageInput" accept="image/*" required>
+                        <div class="upload-content" id="uploadContent">
+                            <div class="upload-icon">📷</div>
+                            <div class="upload-text">اضغط أو اسحب صورة هنا</div>
+                        </div>
+                        <img id="previewImage" class="preview-image">
+                    </div>
+                    <div class="progress-container" id="progressContainer">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <div class="progress-text" id="progressText">0%</div>
+                    </div>
+                </div>
+
+                <!-- Product Name -->
+                <div class="form-group">
+                    <label for="productName">اسم المنتج</label>
+                    <input type="text" id="productName" required placeholder="مثال: سماعة بلوتوث">
+                </div>
+
+                <!-- Price -->
+                <div class="form-group">
+                    <label for="productPrice">السعر (ريال)</label>
+                    <input type="number" id="productPrice" required min="1" placeholder="مثال: 199">
+                </div>
+
+                <!-- Description -->
+                <div class="form-group">
+                    <label for="productDesc">وصف المنتج</label>
+                    <textarea id="productDesc" required placeholder="اكتب وصفاً تفصيلياً للمنتج..."></textarea>
+                </div>
+
+                <!-- Submit -->
+                <button type="submit" class="btn btn-primary btn-block magnetic-btn" id="submitBtn">
+                    <span>نشر المنتج</span>
+                    <span class="spinner" id="btnSpinner"></span>
+                </button>
+            </form>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="js/firebase-config.js"></script>
+    <script src="js/animations.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/products.js"></script>
+    
+    <script>
+        // Check if user is logged in only
+        firebaseApp.auth.onAuthStateChanged((user) => {
+            if (!user) {
+                window.location.href = 'index.html';
+            }
+        });
+
+        // Image preview
+        const imageInput = document.getElementById('imageInput');
+        const previewImage = document.getElementById('previewImage');
+        const uploadArea = document.getElementById('uploadArea');
+        const uploadContent = document.getElementById('uploadContent');
+        let selectedImage = null;
+
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                selectedImage = file;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    previewImage.src = e.target.result;
+                    previewImage.classList.add('show');
+                    uploadContent.style.display = 'none';
+                    uploadArea.classList.add('has-image');
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Drag & drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#00d4ff';
+            uploadArea.style.background = 'rgba(0, 212, 255, 0.1)';
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.style.borderColor = 'rgba(255,255,255,0.2)';
+            uploadArea.style.background = 'transparent';
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                imageInput.files = e.dataTransfer.files;
+                imageInput.dispatchEvent(new Event('change'));
+            }
+        });
+
+        // Form submit
+        document.getElementById('productForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!selectedImage) {
+                Animations.showToast('الرجاء اختيار صورة', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('submitBtn');
+            const spinner = document.getElementById('btnSpinner');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+
+            btn.disabled = true;
+            spinner.classList.add('show');
+            progressContainer.classList.add('show');
+
+            const productData = {
+                name: document.getElementById('productName').value,
+                price: parseFloat(document.getElementById('productPrice').value),
+                description: document.getElementById('productDesc').value
+            };
+
+            const result = await Products.add(productData, selectedImage, (progress) => {
+                progressFill.style.width = progress + '%';
+                progressText.textContent = Math.round(progress) + '%';
+            });
+
+            if (result.success) {
+                Animations.showToast('تم نشر المنتج بنجاح! 🎉', 'success');
+                setTimeout(() => {
+                    window.location.href = 'home.html';
+                }, 1000);
+            } else {
+                Animations.showToast('خطأ في رفع المنتج', 'error');
+                btn.disabled = false;
+                spinner.classList.remove('show');
+            }
+        });
+    </script>
+</body>
+  </html>
+  
